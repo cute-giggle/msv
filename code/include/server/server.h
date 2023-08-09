@@ -60,22 +60,21 @@ public:
         MLOG_INFOR("Server start!");
         while (!shutdown_) {
             auto epTimeout = timeNodeHeap_.GetMinTimeout();
+
+            MLOG_DEBUG("Min epoll timeout: ", epTimeout);
+
             auto numEvents = epoller_.Wait(static_cast<int>(epTimeout));
             for (auto i = 0; i < numEvents; ++i) {
                 auto events = epoller_[i].events;
                 auto fd = epoller_[i].data.fd;
                 if (fd == sfd_) {
-                    // deal listen
                     Listen();
                 } else if (events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
-                    // deal error
                     CloseConnection(&userMapping_[fd]);
                 } else if (events & (EPOLLIN)) {
-                    // deal read
                     timeNodeHeap_.Modify(fd, cnTimeout_);
                     threadPool_.AddTask(std::bind(&Server::ReadEntry, this, &userMapping_[fd]));
                 } else if (events & (EPOLLOUT)) {
-                    // deal write
                     timeNodeHeap_.Modify(fd, cnTimeout_);
                     threadPool_.AddTask(std::bind(&Server::WriteEntry, this, &userMapping_[fd]));
                 } else {
@@ -95,7 +94,7 @@ public:
     void ReadEntry(HttpConnection* conn)
     {
         if (!conn->Read()) {
-            MLOG_ERROR("Read error, connection closed! fd: ", conn->GetFd());
+            MLOG_ERROR("Read error");
             CloseConnection(conn);
             return;
         }
@@ -114,7 +113,7 @@ public:
     void WriteEntry(HttpConnection* conn)
     {
         if (!conn->Write()) {
-            MLOG_ERROR("Write error, connection closed! fd: ", conn->GetFd());
+            MLOG_ERROR("Write error");
             CloseConnection(conn);
             return;
         }
@@ -126,12 +125,16 @@ public:
             ProcessEntry(conn);
             return;
         }
-        MLOG_INFOR("Write complete and no keep-alive, connection closed! fd: ", conn->GetFd());
+        MLOG_DEBUG("Write complete and no keep-alive");
         CloseConnection(conn);
     }
 
     void CloseConnection(HttpConnection* conn)
     {
+        if (conn->IsClosed()) {
+            return;
+        }
+        MLOG_DEBUG("Connection closed! fd: ", conn->GetFd());
         epoller_.DelFd(conn->GetFd());
         conn->Close();
     }
@@ -154,11 +157,11 @@ public:
             if (cfd < 0) {
                 return;
             }
-            if (userMapping_.size() >= MAX_CONNECTION_NUM) {
+            if (HttpConnection::NumOnline >= MAX_CONNECTION_NUM) {
+                MLOG_DEBUG("Server busy! online number: ", HttpConnection::NumOnline);
                 SendError(cfd, "Server busy!");
                 return;
             }
-            
             HttpConnection* conn = &(userMapping_[cfd]);
             conn->Initialize(cnTrigMode_, cfd, addr);
             timeNodeHeap_.Insert(cfd, cnTimeout_, std::bind(&Server::CloseConnection, this, conn));

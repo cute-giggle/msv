@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>MSV - Index</title>
+    <link rel="stylesheet" href="/bootstrap5/css/bootstrap.min.css">
+
+    <style>
+        .navbar .active {
+            background-color: #eae5e9 !important;
+        }
+
+        .navbar-nav a {
+            margin-right: 2rem;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div>
+        <form method="post">
+            <div>
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" />
+                </div>
+                  
+                <div>
+                <label for="pass">Password:</label>
+                <input type="password" id="pass" name="password" required />
+                </div>
+                  
+                <input type="submit" value="login" formaction="/login" formenctype="application/x-www-form-urlencoded" />
+                <input type="submit" value="register" formaction="/register" formenctype="application/x-www-form-urlencoded" />
+        </form>
+    </div>
+
+    <script src="/jquery/jquery-3.6.4.min.js"></script>
+    <script src="/bootstrap5/js/bootstrap.min.js"></script>
+
+</body>
+
+</html>

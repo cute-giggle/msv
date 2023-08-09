@@ -25,35 +25,59 @@ struct ResponseData {
     std::size_t bodyLength{};
 };
 
+struct MmapInfo {
+    void* ptr{};
+    std::size_t size{};
+};
+
 class ResponseMaker {
 public:
+    ResponseMaker() = default;
 
-    static ResponseData Make(const Path& resPath, int code, bool isKeepAlive)
+    ~ResponseMaker()
     {
-        auto resFd = open(resPath.c_str(), O_RDONLY);
-        if (resFd < 0) {
-            MLOG_WARNN("Response maker open file failed! path: ", resPath.c_str());
-            code = 404;
-        }
+        Reset();
+    }
 
-        std::size_t resSize = 0;
-        void* resMmPtr = nullptr;
-        if (resFd > 0) {
-            resSize = std::filesystem::file_size(resPath);
-            resMmPtr = mmap(0, resSize, PROT_READ, MAP_PRIVATE, resFd, 0);
+    void Reset()
+    {
+        if (mmapInfo_.ptr) {
+            munmap(mmapInfo_.ptr, mmapInfo_.size);
         }
-        
-        if (resMmPtr == nullptr || *reinterpret_cast<int*>(resMmPtr) == -1) {
-            MLOG_WARNN("Response maker mmap file failed! path: ", resPath.c_str());
-            code = 404;
-        }
+        mmapInfo_ = {};
+    }
 
+    ResponseData Make(const Path& resPath, int code, bool isKeepAlive)
+    {
         if (code != 200 && code != 400 && code != 404) {
             MLOG_WARNN("Response maker unsupported code: ", code);
             code = 400;
         }
 
+        std::size_t resSize = 0;
+        void* resMmPtr = nullptr;
+        if (std::filesystem::exists(resPath) && !std::filesystem::is_directory(resPath)) {
+            auto resFd = open(resPath.c_str(), O_RDONLY);
+            if (resFd < 0) {
+                MLOG_WARNN("Response maker open file failed! path: ", resPath.c_str());
+                code = 404;
+            }
+            Reset();
+            resSize = std::filesystem::file_size(resPath);
+            resMmPtr = mmap(0, resSize, PROT_READ, MAP_PRIVATE, resFd, 0);
+            if (*reinterpret_cast<int*>(resMmPtr) == -1) {
+                MLOG_WARNN("Response maker mmap file failed! path: ", resPath.c_str());
+                code = 404;
+            }
+            mmapInfo_ = {resMmPtr, resSize};
+            close(resFd);
+        } else {
+            MLOG_WARNN("Resource file not exist or is a directory! path: ", resPath.c_str());
+            code = 404;
+        }
+
         std::string header;
+        header += "HTTP/1.1 " + std::to_string(code) + " " + GetCodeStatus(code) + "\r\n";
         if (isKeepAlive) {
             header += "Connection: keep-alive\r\nkeep-alive: max=6, timeout=120\r\n";
         } else {
@@ -71,7 +95,8 @@ public:
             body = reinterpret_cast<const char*>(resMmPtr);
         } else {
             const auto& errorBody = GetErrorBody(code);
-            header += "Content-length: " + std::to_string(errorBody.length()) + "\r\n\r\n";
+            resSize = errorBody.length();
+            header += "Content-length: " + std::to_string(resSize) + "\r\n\r\n";
             body = errorBody.c_str();
         }
 
@@ -128,6 +153,9 @@ private:
         }
         return "Content-type: " + iter->second + "\r\n";
     }
+
+private:
+    MmapInfo mmapInfo_;
 };
 
 }

@@ -67,12 +67,19 @@ public:
         return std::make_optional(line);
     }
 
+    std::optional<std::string> GetBytes(std::size_t n) {
+        n = std::min(Size(), n);
+        std::string data(data_.begin(), data_.begin() + n);
+        data_.erase(data_.begin(), data_.begin() + n);
+        return std::make_optional(data);
+    }
+
     bool Empty() const
     {
         return data_.empty();
     }
 
-    auto Size() const
+    std::size_t Size() const
     {
         return data_.size();
     }
@@ -86,6 +93,11 @@ public:
     void Clear()
     {
         data_.clear();
+    }
+
+    std::string String() const
+    {
+        return std::string(data_.begin(), data_.end());
     }
 
 private:

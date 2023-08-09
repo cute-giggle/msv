@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <cassert>
 
+#include <iostream>
+
 namespace msv {
 
 namespace timeout {
@@ -33,6 +35,15 @@ public:
 
     void Insert(int cfd, TimeStamp timeout, TimeoutCallbackFuncType&& callback)
     {
+        auto iter = userMapping_.find(cfd);
+        if (iter != userMapping_.end()) {
+            data_[iter->second] = {cfd, Now() + timeout, std::move(callback)};
+            if (!AdjustDown(iter->second)) {
+                AdjustUp(iter->second);
+            }
+            MLOG_DEBUG("Time node heap: node reuse.");
+            return;
+        }
         userMapping_.emplace(cfd, data_.size());
         data_.push_back({cfd, Now() + timeout, std::move(callback)});
         AdjustUp(data_.size() - 1);
@@ -40,8 +51,15 @@ public:
 
     void Modify(int cfd, TimeStamp timeout)
     {
+        if (cfd < 0) {
+            MLOG_DEBUG("Modify time node heap failed! invalid fd: ", cfd);
+            return;
+        }
         auto iter = userMapping_.find(cfd);
-        assert(iter != userMapping_.end());
+        if (iter == userMapping_.end()) {
+            MLOG_DEBUG("Modify time node heap failed! fd not exist. fd: ", cfd);
+            return;
+        }
         data_[iter->second].expire = Now() + timeout;
         if (!AdjustDown(iter->second)) {
             AdjustUp(iter->second);
@@ -65,7 +83,7 @@ public:
         if (Empty()) {
             return -1;
         }
-        auto ret = Now() - Top().expire;
+        auto ret = Top().expire - Now();
         return ret > 0 ? ret : -1;
     }
 
@@ -107,7 +125,7 @@ private:
 
     void Remove(std::size_t index)
     {
-        auto last = data_.size();
+        auto last = data_.size() - 1;
         auto cfd = data_[index].cfd;
         if (index != last) {
             std::swap(data_[last], data_[index]);
@@ -127,7 +145,7 @@ private:
 
     void Pop()
     {
-        Remove(0);
+        Remove(0UL);
     }
 
     bool Empty() const

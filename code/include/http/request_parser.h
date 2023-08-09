@@ -48,9 +48,9 @@ public:
         std::regex expr("^([^ ]*) ([^ ]*) HTTP/([^ ]*)$");
         std::smatch result;
         if (std::regex_match(line, result, expr)) {
-            method_ = std::move(result[0]);
-            path_ = std::move(result[1]);
-            version_ = std::move(result[2]);
+            method_ = std::move(result[1]);
+            path_ = std::move(result[2]);
+            version_ = std::move(result[3]);
             return method_ == "GET" || method_ == "POST";
         }
         return false;
@@ -58,7 +58,7 @@ public:
 
     void FormatPath()
     {
-        static const std::set<std::string> urls = {"/index", "/register", "/login", "/welcome", "/video", "/picture"};
+        static const std::set<std::string> urls = {"/index", "/register", "/login", "/home", "/image", "/video"};
 
         if (*(path_.rbegin()) == '/') {
             path_.pop_back();
@@ -76,7 +76,7 @@ public:
         std::regex expr("^([^:]*): ?(.*)$");
         std::smatch result;
         if (std::regex_match(line, result, expr)) {
-            header_[result[0]] = result[1];
+            header_[result[1]] = result[2];
             return true;
         }
         return false;
@@ -120,7 +120,7 @@ public:
         const auto& password = body_["password"];
 
         char order[256] = {0};
-        snprintf(order, sizeof(order), "SELECT username, password FROM user WHERE username='%s' LIMIT 1", username.c_str());
+        snprintf(order, sizeof(order), "SELECT username, password FROM tb_auth WHERE username='%s' LIMIT 1", username.c_str());
 
         if (mysql_query(mysqlConn.get(), order)) {
             path_ = "/error.html";
@@ -141,7 +141,7 @@ public:
             auto row = mysql_fetch_row(result);
             std::string realPassword = row[1];
             if (password == realPassword) {
-                path_ = "/welcome.html";
+                path_ = "/home.html";
                 mysql_free_result(result);
                 return;
             }
@@ -158,20 +158,30 @@ public:
         }
 
         bzero(order, sizeof(order));
-        snprintf(order, sizeof(order),"INSERT INTO user(username, password) VALUES('%s','%s')", username.c_str(), password.c_str());
+        snprintf(order, sizeof(order),"INSERT INTO tb_auth(username, password) VALUES('%s','%s')", username.c_str(), password.c_str());
         if (mysql_query(mysqlConn.get(), order)) {
             path_ = "/error.html";
             mysql_free_result(result);
             return;
         }
-        path_ = "/welcome.html";
+        path_ = "/home.html";
         mysql_free_result(result);
     }
 
     RetStatus Parse(ReadBuffer& rdbuf)
     {
         while (parseStatus_ != ParseStatus::FINISH) {
-            auto ret = rdbuf.GetLine();
+            std::optional<std::string> ret = std::nullopt;
+            
+            if (parseStatus_ == ParseStatus::BODY) {
+                std::size_t length = std::stoi(header_["Content-Length"]);
+                if (length <= rdbuf.Size()) {
+                    ret = rdbuf.GetBytes(length);
+                }
+            } else {
+                ret = rdbuf.GetLine();
+            }
+
             if (ret == std::nullopt) {
                 return RetStatus::NO_REQUEST;
             }
@@ -189,6 +199,7 @@ public:
             switch (parseStatus_) {
             case ParseStatus::REQUESTLINE:
                 if (!ParseRequestLine(line)) {
+                    MLOG_DEBUG("Parse request line failed!");
                     return RetStatus::BAD_REQUEST;
                 }
                 FormatPath();
@@ -196,17 +207,20 @@ public:
                 break;
             case ParseStatus::HEADER:
                 if (!ParseHeader(line)) {
+                    MLOG_DEBUG("Parse header failed!");
                     return RetStatus::BAD_REQUEST;
                 }
                 break;
             case ParseStatus::BODY:
                 if (!ParseBody(line)) {
+                    MLOG_DEBUG("Parse body failed!");
                     return RetStatus::BAD_REQUEST;
                 }
                 UserVerify();
                 parseStatus_ = ParseStatus::FINISH;
                 break;
             default:
+                MLOG_DEBUG("Parse unknown error!");
                 return RetStatus::BAD_REQUEST;
                 break;
             }

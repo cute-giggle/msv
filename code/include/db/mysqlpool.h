@@ -91,7 +91,7 @@ private:
         config_ = config;
         config_.numConnect = std::min(config_.numConnect, MAX_NUM_CONNECT);
 
-        for (auto i = 0U; i < numConnect_; ++i) {
+        for (auto i = 0U; i < config_.numConnect; ++i) {
             auto ptr = mysql_init(nullptr);
             if (ptr == nullptr) {
                 MLOG_ERROR("Mysql initialize failed!");
@@ -104,13 +104,13 @@ private:
             }
             queue_.push(ptr);
         }
+        MLOG_INFOR("Mysqlpool initialize success!");
         return true;
     }
 
 private:
     MysqlConfig config_;
     std::mutex mutex_;
-    uint32_t numConnect_;
     std::queue<MYSQL*> queue_;
     std::condition_variable cond_;
 };
