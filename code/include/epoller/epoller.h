@@ -14,9 +14,12 @@ public:
     static constexpr uint32_t MAX_EVENT_BUFFER_SIZE = 4096U;
 
 public:
-    explicit Epoller(uint32_t eventBufferSize = 4096U) : efd_(epoll_create(2333)), buffer(std::min(eventBufferSize, MAX_EVENT_BUFFER_SIZE))
+    explicit Epoller(uint32_t eventBufferSize = MAX_EVENT_BUFFER_SIZE) : efd_(-1), buffer_(std::min(eventBufferSize, MAX_EVENT_BUFFER_SIZE))
     {
-
+        efd_ = epoll_create(2333);
+        if (efd_ < 0) {
+            MLOG_ERROR("Create epoll fd failed!");
+        }
     }
 
     ~Epoller()
@@ -48,17 +51,17 @@ public:
 
     int Wait(int timeout)
     {
-        return epoll_wait(efd_, buffer.data(), buffer.size(), timeout);
+        return epoll_wait(efd_, buffer_.data(), buffer_.size(), timeout);
     }
 
     const struct epoll_event& operator[](std::size_t index) const
     {
-        return buffer[index];
+        return buffer_[index];
     }
 
 private:
     int efd_;
-    std::vector<struct epoll_event> buffer;
+    std::vector<struct epoll_event> buffer_;
 };
 
 }

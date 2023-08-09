@@ -15,12 +15,12 @@
 namespace msv {
 
 struct MysqlConfig {
-    std::string host;
-    uint16_t port;
-    uint16_t numConnect;
-    std::string user;
-    std::string passwd;
-    std::string dbname;
+    std::string host{"localhost"};
+    uint16_t port{3306U};
+    uint16_t numConnect{8U};
+    std::string user{};
+    std::string passwd{};
+    std::string dbname{};
 };
 
 class MysqlPool {
@@ -43,42 +43,10 @@ public:
         Shutdown();
     }
 
-    MYSQL* GetConnection()
-    {
-        std::unique_lock locker(mutex_);
-        if (queue_.empty()) {
-            cond_.wait(locker);
-        }
-        if (!queue_.empty()) {
-            auto ret = queue_.front();
-            queue_.pop();
-            return ret;
-        }
-        return nullptr;
-    }
+    MYSQL* GetConnection();
+    void RetConnection(MYSQL* ptr);
 
-    void RetConnection(MYSQL* ptr)
-    {
-        if (ptr == nullptr) {
-            return;
-        }
-
-        {
-            std::unique_lock locker(mutex_);
-            queue_.push(ptr);
-        }
-        cond_.notify_one();
-    }
-
-    void Shutdown()
-    {
-        std::lock_guard locker(mutex_);
-        while(!queue_.empty()) {
-            auto ptr = queue_.front();
-            queue_.pop();
-            mysql_close(ptr);
-        }
-    }
+    void Shutdown();
 
 private:
     MysqlPool() = default;
@@ -86,33 +54,13 @@ private:
     MysqlPool(const MysqlPool& rhs) = delete;
     MysqlPool& operator=(const MysqlPool& rhs) = delete;
 
-    [[nodiscard]] bool Initialize(const MysqlConfig& config)
-    {
-        config_ = config;
-        config_.numConnect = std::min(config_.numConnect, MAX_NUM_CONNECT);
-
-        for (auto i = 0U; i < config_.numConnect; ++i) {
-            auto ptr = mysql_init(nullptr);
-            if (ptr == nullptr) {
-                MLOG_ERROR("Mysql initialize failed!");
-                return false;
-            }
-            ptr = mysql_real_connect(ptr, config_.host.c_str(), config_.user.c_str(), config_.passwd.c_str(), config_.dbname.c_str(), config_.port, nullptr, 0);
-            if (ptr == nullptr) {
-                MLOG_ERROR("Mysql connected failed!");
-                return false;
-            }
-            queue_.push(ptr);
-        }
-        MLOG_INFOR("Mysqlpool initialize success!");
-        return true;
-    }
+    [[nodiscard]] bool Initialize(const MysqlConfig& config);
 
 private:
-    MysqlConfig config_;
-    std::mutex mutex_;
-    std::queue<MYSQL*> queue_;
-    std::condition_variable cond_;
+    MysqlConfig config_{};
+    std::mutex mutex_{};
+    std::queue<MYSQL*> queue_{};
+    std::condition_variable cond_{};
 };
 
 inline auto GetMysqlConnection()
